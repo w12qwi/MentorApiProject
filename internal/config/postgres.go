@@ -21,7 +21,7 @@ func LoadPostgresConfig() PostgresConfig {
 		User:     os.Getenv("POSTGRES_USER"),
 		Password: os.Getenv("POSTGRES_PASSWORD"),
 		Db:       os.Getenv("POSTGRES_DB"),
-		SSLMode:  os.Getenv("disable"),
+		SSLMode:  os.Getenv("POSTGRES_SSL"),
 	}
 }
 

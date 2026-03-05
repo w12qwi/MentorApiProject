@@ -65,7 +65,7 @@ func (h *Handler) Calculate(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	err = json.NewEncoder(w).Encode(dto.CalculateResponse{Result: resp})
 	if err != nil {
-		slog.Error("Unable to encode error response:", err)
+		slog.Error("Unable to encode  response:", err)
 	}
 
 }
@@ -95,6 +95,7 @@ func (h *Handler) GetById(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			slog.Error("Unable to encode error response:", err)
 		}
+		return
 	}
 
 	response := dto.CalculationResponse{
@@ -125,9 +126,10 @@ func (h *Handler) GetAllCalculations(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			slog.Error("Unable to encode error response:", err)
 		}
+		return
 	}
 
-	response := []dto.CalculationResponse{}
+	response := make([]dto.CalculationResponse, 0)
 	for _, calculation := range resp {
 		response = append(response, dto.CalculationResponse{
 			Id:        calculation.Id.String(),
@@ -151,6 +153,7 @@ func (h *Handler) GetAllCalculations(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetCalculationsByDate(w http.ResponseWriter, r *http.Request) {
 
 	var req dto.GetCalculationsByDateRequest
+
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -160,7 +163,7 @@ func (h *Handler) GetCalculationsByDate(w http.ResponseWriter, r *http.Request) 
 			slog.Error("Unable to encode error response:", err)
 			return
 		}
-
+		return
 	}
 
 	err = req.Validate()
@@ -171,6 +174,7 @@ func (h *Handler) GetCalculationsByDate(w http.ResponseWriter, r *http.Request) 
 		if err != nil {
 			slog.Error("Unable to encode error response:", err)
 		}
+		return
 	}
 
 	resp, err := h.calculationService.GetCalculationsByDate(r.Context(), req.UTCDate())
@@ -182,10 +186,10 @@ func (h *Handler) GetCalculationsByDate(w http.ResponseWriter, r *http.Request) 
 			slog.Error("Unable to encode error response:", err)
 			return
 		}
-
+		return
 	}
 
-	response := []dto.CalculationResponse{}
+	response := make([]dto.CalculationResponse, 0)
 	for _, calculation := range resp {
 		response = append(response, dto.CalculationResponse{
 			Id:        calculation.Id.String(),
@@ -208,6 +212,7 @@ func (h *Handler) GetCalculationsByDate(w http.ResponseWriter, r *http.Request) 
 func (h *Handler) GetCalculationsByDateRange(w http.ResponseWriter, r *http.Request) {
 
 	req := dto.GetCalculationsByDateRangeRequest{}
+
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -218,6 +223,7 @@ func (h *Handler) GetCalculationsByDateRange(w http.ResponseWriter, r *http.Requ
 			return
 		}
 	}
+
 	err = req.Validate()
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -226,6 +232,7 @@ func (h *Handler) GetCalculationsByDateRange(w http.ResponseWriter, r *http.Requ
 		if err != nil {
 			slog.Error("Unable to encode error response:", err)
 		}
+		return
 	}
 
 	resp, err := h.calculationService.GetCalculationsByDateRange(r.Context(), req.UTCDateFrom(), req.UTCDateTo())
@@ -237,9 +244,10 @@ func (h *Handler) GetCalculationsByDateRange(w http.ResponseWriter, r *http.Requ
 			slog.Error("Unable to encode error response:", err)
 			return
 		}
+		return
 	}
 
-	response := []dto.CalculationResponse{}
+	response := make([]dto.CalculationResponse, 0)
 	for _, calculation := range resp {
 		response = append(response, dto.CalculationResponse{
 			Id:        calculation.Id.String(),
@@ -261,7 +269,7 @@ func (h *Handler) GetCalculationsByDateRange(w http.ResponseWriter, r *http.Requ
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /calculate", h.Calculate)
-	mux.HandleFunc("GET /сalculations/{id}", h.GetById)
+	mux.HandleFunc("GET /calculations/{id}", h.GetById)
 	mux.HandleFunc("GET /calculations", h.GetAllCalculations)
 	mux.HandleFunc("GET /calculations/by-date", h.GetCalculationsByDate)
 	mux.HandleFunc("GET /calculations/by-date-range", h.GetCalculationsByDateRange)

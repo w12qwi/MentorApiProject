@@ -7,9 +7,9 @@ import (
 
 type Calculation struct {
 	Id        uuid.UUID
-	NumA      int
-	NumB      int
+	NumA      float64
+	NumB      float64
 	Sign      string
-	Result    int
+	Result    float64
 	CreatedAt time.Time
 }

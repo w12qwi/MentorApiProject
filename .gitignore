@@ -1,7 +1,4 @@
 
-# env file
 .env
-
-# Editor/IDE
 .idea/
 

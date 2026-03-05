@@ -15,12 +15,13 @@ var (
 	InvalidIdFormatError    = errors.New("Invalid id format")
 	InvalidDateFormatError  = errors.New("Invalid date format")
 	InvalidRequestBodyError = errors.New("Invalid request body")
+	InvalidDateRangeError   = errors.New("Invalid date range")
 )
 
 type CalculateRequest struct {
-	NumA int    `json:"numA"`
-	NumB int    `json:"numB"`
-	Sign string `json:"sign"`
+	NumA float64 `json:"numA"`
+	NumB float64 `json:"numB"`
+	Sign string  `json:"sign"`
 }
 
 type GetByIdRequest struct {
@@ -67,14 +68,18 @@ func (r *GetCalculationsByDateRequest) Validate() error {
 }
 
 func (r *GetCalculationsByDateRangeRequest) Validate() error {
-	_, err := time.Parse(dateFormat, r.From)
+	from, err := time.Parse(dateFormat, r.From)
 	if err != nil {
 		return InvalidDateFormatError
 	}
 
-	_, err = time.Parse(dateFormat, r.To)
+	to, err := time.Parse(dateFormat, r.To)
 	if err != nil {
 		return InvalidDateFormatError
+	}
+
+	if from.After(to) {
+		return InvalidDateRangeError
 	}
 
 	return nil
@@ -98,5 +103,5 @@ func (r *GetCalculationsByDateRangeRequest) UTCDateFrom() time.Time {
 func (r *GetCalculationsByDateRangeRequest) UTCDateTo() time.Time {
 	to, _ := time.Parse(dateFormat, r.To)
 
-	return to.UTC()
+	return to.UTC().Add(24*time.Hour - time.Second)
 }

@@ -22,11 +22,11 @@ type Service struct {
 	storage Storage
 }
 
-func NewService(storage Storage) *Service {
-	return &Service{storage: storage}
+func NewService(storage Storage) Service {
+	return Service{storage: storage}
 }
 
-func (s *Service) Calculate(ctx context.Context, calculation models.Calculation) (int, error) {
+func (s *Service) Calculate(ctx context.Context, calculation models.Calculation) (float64, error) {
 
 	calculation.Id = uuid.New()
 	calculation.CreatedAt = time.Now().UTC()
@@ -44,7 +44,7 @@ func (s *Service) Calculate(ctx context.Context, calculation models.Calculation)
 
 	err := s.storage.SaveCalculation(ctx, calculation)
 	if err != nil {
-		slog.Error(fmt.Sprintf(UnableToSaveCalculationError.Error())+":%s", err.Error())
+		slog.Error(UnableToSaveCalculationError.Error(), "error", err.Error())
 		return 0, UnableToSaveCalculationError
 	}
 
