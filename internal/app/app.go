@@ -3,10 +3,13 @@ package app
 import (
 	"MentorApiProject/internal/config"
 	"MentorApiProject/internal/handlers/calculationHandler"
-	"MentorApiProject/internal/infrastructure/db/postgres"
+
+	"MentorApiProject/internal/infrastructure/grpc"
+	"MentorApiProject/internal/infrastructure/kafka"
+	"MentorApiProject/internal/repository"
 	"MentorApiProject/internal/service/calculationService"
 	"context"
-	"database/sql"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -14,37 +17,33 @@ import (
 
 type App struct {
 	server *http.Server
-	db     *sql.DB
 }
 
 func NewApp() *App {
 
-	postgresConfig := config.LoadPostgresConfig()
+	grpcConfig := config.LoadGRPCConfig()
+	kafkaConfig := config.LoadKafkaConfig()
+	AppConfig := config.LoadAppConfig()
 
-	db, err := postgres.Connect(postgresConfig)
-	if err != nil {
-		panic(err)
-	}
+	grpcClient := grpc.NewClient(context.TODO(), grpcConfig)
+	calculationGRPCClient := grpc.NewCalculationsClient(grpcClient, 10)
 
-	err = postgres.RunMigrations(postgresConfig)
-	if err != nil {
-		panic(err)
-	}
+	kafkaProducer := kafka.NewProducer(kafkaConfig)
 
-	calculationRepo := postgres.NewCalculationsRepository(db)
+	repo := repository.NewCalculationsRepository(calculationGRPCClient, kafkaProducer)
 
-	calculationSrvc := calculationService.NewService(calculationRepo)
+	calculationService := calculationService.NewService(repo)
 
-	calculationHandler := calculationHandler.NewHandler(calculationSrvc)
+	HTTPHandler := calculationHandler.NewHandler(calculationService)
 
 	mux := http.NewServeMux()
-	calculationHandler.RegisterRoutes(mux)
+	HTTPHandler.RegisterRoutes(mux)
 
 	return &App{
 		server: &http.Server{
-			Addr:    ":8080",
+			Addr:    fmt.Sprintf(":%s", AppConfig.Port),
 			Handler: mux,
-		}, db: db,
+		},
 	}
 }
 
@@ -58,8 +57,5 @@ func (a *App) Shutdown() error {
 	defer cancel()
 
 	err := a.server.Shutdown(ctx)
-	if err := a.db.Close(); err != nil {
-		slog.Error("failed to close db", "error", err)
-	}
 	return err
 }

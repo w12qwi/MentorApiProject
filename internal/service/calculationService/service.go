@@ -2,28 +2,26 @@ package calculationService
 
 import (
 	"MentorApiProject/internal/domain/models"
+	"MentorApiProject/internal/infrastructure/grpc"
 	"context"
-	"database/sql"
 	"errors"
-	"fmt"
 	"github.com/google/uuid"
 	"log/slog"
 	"time"
 )
 
-type Storage interface {
-	SaveCalculation(ctx context.Context, calculation models.Calculation) error
-	GetById(ctx context.Context, id uuid.UUID) (models.Calculation, error)
-	GetAllCalculations(ctx context.Context) ([]models.Calculation, error)
-	GetCalculationsByDate(ctx context.Context, date time.Time) ([]models.Calculation, error)
-	GetCalculationsByDateRange(ctx context.Context, from, to time.Time) ([]models.Calculation, error)
+type Repository interface {
+	SaveCalculation(ctx context.Context, calculation *models.Calculation) error
+	GetCalculation(ctx context.Context, id string) (*models.Calculation, error)
+	GetAllCalculations(ctx context.Context) ([]*models.Calculation, error)
+	GetCalculationsWithFilters(ctx context.Context, filters models.CalculationsFilters) ([]*models.Calculation, error)
 }
 type Service struct {
-	storage Storage
+	storage Repository
 }
 
-func NewService(storage Storage) Service {
-	return Service{storage: storage}
+func NewService(storage Repository) *Service {
+	return &Service{storage: storage}
 }
 
 func (s *Service) Calculate(ctx context.Context, calculation models.Calculation) (float64, error) {
@@ -37,62 +35,48 @@ func (s *Service) Calculate(ctx context.Context, calculation models.Calculation)
 	case "-":
 		calculation.Result = calculation.NumA - calculation.NumB
 	case "*":
-		calculation.Result = calculation.NumA * calculation.NumB //слишком большие значения могут превысить максимальное значение инта
+		calculation.Result = calculation.NumA * calculation.NumB
 	case "/":
 		calculation.Result = calculation.NumA / calculation.NumB
 	}
 
-	err := s.storage.SaveCalculation(ctx, calculation)
+	err := s.storage.SaveCalculation(ctx, &calculation)
 	if err != nil {
-		slog.Error(UnableToSaveCalculationError.Error(), "error", err.Error())
 		return 0, UnableToSaveCalculationError
 	}
 
 	return calculation.Result, nil
 }
 
-func (s *Service) GetById(ctx context.Context, id uuid.UUID) (models.Calculation, error) {
+func (s *Service) GetCalculation(ctx context.Context, id string) (*models.Calculation, error) {
+	result, err := s.storage.GetCalculation(ctx, id)
 
-	response, err := s.storage.GetById(ctx, id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return models.Calculation{}, NoSuchCalculationError
-	} else if err != nil {
-		slog.Error(fmt.Sprintf("Some error occured while querying postgres"+":%s", err.Error()))
-		return models.Calculation{}, InternalError
+	if err != nil {
+		if errors.Is(err, grpc.CalcultionDoesNotExist) {
+			return nil, err
+		}
+		slog.Error("Unable to get calculation by id: ", err)
+		return nil, InternalError
 	}
-
-	return response, err
+	return result, nil
 }
 
-func (s *Service) GetAllCalculations(ctx context.Context) ([]models.Calculation, error) {
-
+func (s *Service) GetAllCalculations(ctx context.Context) ([]*models.Calculation, error) {
 	result, err := s.storage.GetAllCalculations(ctx)
 	if err != nil {
-		slog.Error(fmt.Sprintf("Some error occured while querying postgres"+":%s", err.Error()))
+		slog.Error("Unable to get all calculations: ", err)
 		return nil, InternalError
 	}
 
 	return result, nil
 }
 
-func (s *Service) GetCalculationsByDate(ctx context.Context, date time.Time) ([]models.Calculation, error) {
-
-	response, err := s.storage.GetCalculationsByDate(ctx, date)
+func (s *Service) GetCalculationsWithFilters(ctx context.Context, filters models.CalculationsFilters) ([]*models.Calculation, error) {
+	result, err := s.storage.GetCalculationsWithFilters(ctx, filters)
 	if err != nil {
-		slog.Error(fmt.Sprintf("Some error occured while querying postgres"+":%s", err.Error()))
+		slog.Error("Unable to get calculations with filters: ", err)
 		return nil, InternalError
 	}
 
-	return response, nil
-}
-
-func (s *Service) GetCalculationsByDateRange(ctx context.Context, from, to time.Time) ([]models.Calculation, error) {
-
-	response, err := s.storage.GetCalculationsByDateRange(ctx, from, to)
-	if err != nil {
-		slog.Error(fmt.Sprintf("Some error occured while querying postgres"+":%s", err.Error()))
-		return nil, InternalError
-	}
-
-	return response, nil
+	return result, nil
 }

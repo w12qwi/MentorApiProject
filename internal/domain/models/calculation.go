@@ -13,3 +13,10 @@ type Calculation struct {
 	Result    float64
 	CreatedAt time.Time
 }
+
+type CalculationsFilters struct {
+	Sign     *string
+	Date     *time.Time
+	DateFrom *time.Time
+	DateTo   *time.Time
+}

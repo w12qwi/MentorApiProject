@@ -1,19 +1,31 @@
 package calculationHandler
 
 import (
+	"MentorApiProject/internal/adapter"
 	"MentorApiProject/internal/domain/models"
 	"MentorApiProject/internal/handlers/calculationHandler/dto"
-	"MentorApiProject/internal/service/calculationService"
+	"MentorApiProject/internal/infrastructure/grpc"
+	"context"
 	"encoding/json"
+	"errors"
+	"github.com/google/uuid"
+	"io"
 	"log/slog"
 	"net/http"
 )
 
-type Handler struct {
-	calculationService calculationService.Service
+type CalculationService interface {
+	Calculate(ctx context.Context, calculation models.Calculation) (float64, error)
+	GetCalculation(ctx context.Context, id string) (*models.Calculation, error)
+	GetAllCalculations(ctx context.Context) ([]*models.Calculation, error)
+	GetCalculationsWithFilters(ctx context.Context, filters models.CalculationsFilters) ([]*models.Calculation, error)
 }
 
-func NewHandler(calculationService calculationService.Service) *Handler {
+type Handler struct {
+	calculationService CalculationService
+}
+
+func NewHandler(calculationService CalculationService) *Handler {
 	return &Handler{calculationService: calculationService}
 }
 
@@ -65,14 +77,14 @@ func (h *Handler) Calculate(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	err = json.NewEncoder(w).Encode(dto.CalculateResponse{Result: resp})
 	if err != nil {
-		slog.Error("Unable to encode  response:", err)
+		slog.Error("Unable to encode response:", err)
 	}
-
+	return
 }
 
 func (h *Handler) GetById(w http.ResponseWriter, r *http.Request) {
 
-	req := dto.GetByIdRequest{
+	req := dto.GetCalculationByIdRequest{
 		Id: r.PathValue("id"),
 	}
 
@@ -87,8 +99,16 @@ func (h *Handler) GetById(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := h.calculationService.GetById(r.Context(), req.UUID())
+	id := uuid.MustParse(req.Id).String()
+
+	resp, err := h.calculationService.GetCalculation(r.Context(), id)
 	if err != nil {
+		if errors.Is(err, grpc.CalcultionDoesNotExist) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			err = json.NewEncoder(w).Encode(dto.ErrorResponse{Error: err.Error()})
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		err = json.NewEncoder(w).Encode(dto.ErrorResponse{Error: err.Error()})
@@ -113,165 +133,72 @@ func (h *Handler) GetById(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("Unable to encode error response:", err)
 	}
-
+	return
 }
 
-func (h *Handler) GetAllCalculations(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) GetCalculations(w http.ResponseWriter, r *http.Request) {
 
-	resp, err := h.calculationService.GetAllCalculations(r.Context())
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		err = json.NewEncoder(w).Encode(dto.ErrorResponse{Error: err.Error()})
-		if err != nil {
-			slog.Error("Unable to encode error response:", err)
-		}
-		return
-	}
-
-	response := make([]dto.CalculationResponse, 0)
-	for _, calculation := range resp {
-		response = append(response, dto.CalculationResponse{
-			Id:        calculation.Id.String(),
-			NumA:      calculation.NumA,
-			NumB:      calculation.NumB,
-			Sign:      calculation.Sign,
-			Result:    calculation.Result,
-			CreatedAt: calculation.CreatedAt,
-		})
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	err = json.NewEncoder(w).Encode(response)
-	if err != nil {
-		slog.Error("Unable to encode error response:", err)
-	}
-
-}
-
-func (h *Handler) GetCalculationsByDate(w http.ResponseWriter, r *http.Request) {
-
-	var req dto.GetCalculationsByDateRequest
+	var req dto.GetCalculationstWithFiltersRequest
 
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
+		if err == io.EOF {
+			resp, err := h.calculationService.GetAllCalculations(r.Context())
+			if err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				err = json.NewEncoder(w).Encode(dto.ErrorResponse{Error: err.Error()})
+				if err != nil {
+					slog.Error("Unable to encode error response:", err)
+				}
+				return
+			}
+
+			err = req.Validate()
+			if err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				err = json.NewEncoder(w).Encode(dto.ErrorResponse{Error: err.Error()})
+				if err != nil {
+					slog.Error("Unable to encode error response:", err)
+				}
+			}
+
+			response := adapter.DomainSliceToDto(resp)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			err = json.NewEncoder(w).Encode(response)
+			if err != nil {
+				slog.Error("Unable to encode error response:", err)
+			}
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		err = json.NewEncoder(w).Encode(dto.ErrorResponse{Error: dto.InvalidRequestBodyError.Error()})
-		if err != nil {
-			slog.Error("Unable to encode error response:", err)
-			return
-		}
-		return
 	}
 
-	err = req.Validate()
+	filters, err := adapter.DtoFiltersToDomain(req)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnprocessableEntity)
+		w.WriteHeader(http.StatusBadRequest)
 		err = json.NewEncoder(w).Encode(dto.ErrorResponse{Error: err.Error()})
-		if err != nil {
-			slog.Error("Unable to encode error response:", err)
-		}
-		return
 	}
 
-	resp, err := h.calculationService.GetCalculationsByDate(r.Context(), req.UTCDate())
+	resp, err := h.calculationService.GetCalculationsWithFilters(r.Context(), filters)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		err = json.NewEncoder(w).Encode(dto.ErrorResponse{Error: err.Error()})
-		if err != nil {
-			slog.Error("Unable to encode error response:", err)
-			return
-		}
-		return
 	}
-
-	response := make([]dto.CalculationResponse, 0)
-	for _, calculation := range resp {
-		response = append(response, dto.CalculationResponse{
-			Id:        calculation.Id.String(),
-			NumA:      calculation.NumA,
-			NumB:      calculation.NumB,
-			Sign:      calculation.Sign,
-			Result:    calculation.Result,
-			CreatedAt: calculation.CreatedAt,
-		})
-	}
-
+	response := adapter.DomainSliceToDto(resp)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	err = json.NewEncoder(w).Encode(response)
-	if err != nil {
-		slog.Error("Unable to encode error response:", err)
-	}
-}
-
-func (h *Handler) GetCalculationsByDateRange(w http.ResponseWriter, r *http.Request) {
-
-	req := dto.GetCalculationsByDateRangeRequest{}
-
-	err := json.NewDecoder(r.Body).Decode(&req)
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		err = json.NewEncoder(w).Encode(dto.ErrorResponse{Error: dto.InvalidRequestBodyError.Error()})
-		if err != nil {
-			slog.Error("Unable to encode error response:", err)
-			return
-		}
-	}
-
-	err = req.Validate()
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		err = json.NewEncoder(w).Encode(dto.ErrorResponse{Error: dto.InvalidDateFormatError.Error()})
-		if err != nil {
-			slog.Error("Unable to encode error response:", err)
-		}
-		return
-	}
-
-	resp, err := h.calculationService.GetCalculationsByDateRange(r.Context(), req.UTCDateFrom(), req.UTCDateTo())
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		err = json.NewEncoder(w).Encode(dto.ErrorResponse{Error: err.Error()})
-		if err != nil {
-			slog.Error("Unable to encode error response:", err)
-			return
-		}
-		return
-	}
-
-	response := make([]dto.CalculationResponse, 0)
-	for _, calculation := range resp {
-		response = append(response, dto.CalculationResponse{
-			Id:        calculation.Id.String(),
-			NumA:      calculation.NumA,
-			NumB:      calculation.NumB,
-			Sign:      calculation.Sign,
-			Result:    calculation.Result,
-			CreatedAt: calculation.CreatedAt,
-		})
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	err = json.NewEncoder(w).Encode(response)
-	if err != nil {
-		slog.Error("Unable to encode error response:", err)
-	}
 }
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /calculate", h.Calculate)
 	mux.HandleFunc("GET /calculations/{id}", h.GetById)
-	mux.HandleFunc("GET /calculations", h.GetAllCalculations)
-	mux.HandleFunc("GET /calculations/by-date", h.GetCalculationsByDate)
-	mux.HandleFunc("GET /calculations/by-date-range", h.GetCalculationsByDateRange)
-
+	mux.HandleFunc("GET /calculations", h.GetCalculations)
 }
