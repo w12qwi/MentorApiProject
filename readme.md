@@ -32,7 +32,7 @@ cd MentorApiProject
 go run ./cmd/main.go
 ```
 
-Сервис будет доступен на `http://localhost:8080`.
+Сервис будет доступен на `http://localhost:9999`.
 
 ---
 
@@ -45,6 +45,20 @@ POSTGRES_USER=mentor
 POSTGRES_PASSWORD=mentor
 POSTGRES_DB=calculations_project
 POSTGRES_SSL=disable
+
+GRPC_SERVER_HOST=localhost
+GRPC_SERVER_PORT=50051
+GRPC_TIMEOUT=10
+
+KAFKA_BROKER_HOST=localhost
+KAFKA_BROKER_PORT=29092
+KAFKA_TOPIC=calculations-topic
+KAFKA_CONSUMER_GROUP=calculations-consumer-group
+KAFKA_DLQ_TOPIC=calculations-dlq
+
+JAEGER_PORT=14268
+JAEGER_HOST=localhost
+JAEGER_TRACES_ENDPOINT=/api/traces
 ```
 
 ---
@@ -71,37 +85,21 @@ POSTGRES_SSL=disable
 
 Доступные знаки: `+`, `-`, `*`, `/`
 
----
-
-### GET /calculations
-Получить все вычисления.
-
----
 
 ### GET /calculations/{id}
 Получить вычисление по ID.
 
 ---
 
-### GET /calculations/by-date
-Получить вычисления за определённую дату.
+### GET /calculations
+Получить вычисления c использованием фильтров(если фильтров нет клиент получает все существующие вычисления).
 
 **Body:**
 ```json
 {
-    "date": "2024-01-15"
-}
-```
-
----
-
-### GET /calculations/by-date-range
-Получить вычисления за диапазон дат.
-
-**Body:**
-```json
-{
-    "fromDate": "2024-01-01",
-    "toDate": "2024-01-31"
+    "date": "2024-01-15",
+    "dateFrom": "2024-01-15",
+    "dateTo": "2024-01-15",
+    "sign": "+"
 }
 ```
