@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	pb "github.com/w12qwi/calculationsProto/gen"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
@@ -13,7 +14,6 @@ import (
 )
 
 func NewClient(ctx context.Context, cfg config.GRPCconfig) pb.CalculationsDataServiceClient {
-
 	kacp := keepalive.ClientParameters{
 		Time:                10 * time.Second,
 		Timeout:             3 * time.Second,
@@ -23,12 +23,14 @@ func NewClient(ctx context.Context, cfg config.GRPCconfig) pb.CalculationsDataSe
 	dialOpts := []grpc.DialOption{
 		grpc.WithKeepaliveParams(kacp),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 	}
 
-	conn, err := grpc.DialContext(ctx,
+	conn, err := grpc.DialContext(
+		ctx,
 		fmt.Sprintf("%s:%s", cfg.Host, cfg.Port),
-		dialOpts...)
-
+		dialOpts...,
+	)
 	if err != nil {
 		log.Fatal(err)
 	}

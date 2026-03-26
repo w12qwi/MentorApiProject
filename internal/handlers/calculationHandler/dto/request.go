@@ -37,31 +37,50 @@ type GetCalculationByIdRequest struct {
 }
 
 func (r *GetCalculationstWithFiltersRequest) Validate() error {
-	if r.Date != nil && r.DateFrom != nil && r.DateTo != nil || r.Date == nil && r.DateFrom == nil || r.Date != nil && r.DateTo == nil {
+	if r.Sign == nil && r.Date == nil && r.DateFrom == nil && r.DateTo == nil {
+		return nil
+	}
+
+	if r.Date != nil && (r.DateFrom != nil || r.DateTo != nil) {
 		return InvalidDateConstraintError
 	}
 
-	if !strings.Contains("+-*/", *r.Sign) && r.Sign != nil {
-		return InvalidSignError
+	if r.DateFrom != nil && r.DateTo == nil {
+		// валидируем формат
+		if _, err := time.Parse(dateFormat, *r.DateFrom); err != nil {
+			return InvalidDateFormatError
+		}
+		return nil
 	}
 
-	_, err := time.Parse(dateFormat, *r.Date)
-	if err != nil {
-		return InvalidDateFormatError
+	if r.DateTo != nil && r.DateFrom == nil {
+		if _, err := time.Parse(dateFormat, *r.DateTo); err != nil {
+			return InvalidDateFormatError
+		}
+		return nil
 	}
 
-	from, err := time.Parse(dateFormat, *r.DateFrom)
-	if err != nil {
-		return InvalidDateFormatError
+	if r.DateFrom != nil && r.DateTo != nil {
+
+		from, err := time.Parse(dateFormat, *r.DateFrom)
+		if err != nil {
+			return InvalidDateFormatError
+		}
+		to, err := time.Parse(dateFormat, *r.DateTo)
+		if err != nil {
+			return InvalidDateFormatError
+		}
+		if from.After(to) {
+			return InvalidDateRangeError
+		}
+		return nil
 	}
 
-	to, err := time.Parse(dateFormat, *r.DateTo)
-	if err != nil {
-		return InvalidDateFormatError
-	}
-
-	if from.After(to) {
-		return InvalidDateRangeError
+	if r.Date != nil {
+		if _, err := time.Parse(dateFormat, *r.Date); err != nil {
+			return InvalidDateFormatError
+		}
+		return nil
 	}
 
 	return nil

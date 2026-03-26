@@ -3,52 +3,58 @@ package app
 import (
 	"MentorApiProject/internal/config"
 	"MentorApiProject/internal/handlers/calculationHandler"
-
 	"MentorApiProject/internal/infrastructure/grpc"
 	"MentorApiProject/internal/infrastructure/kafka"
+	"MentorApiProject/internal/infrastructure/tracing"
 	"MentorApiProject/internal/repository"
 	"MentorApiProject/internal/service/calculationService"
 	"context"
-	"fmt"
+	"go.opentelemetry.io/otel"
+	"log"
 	"log/slog"
 	"net/http"
 	"time"
 )
 
 type App struct {
-	server *http.Server
+	server         *http.Server
+	tracerShutdown func(ctx context.Context) error
 }
 
 func NewApp() *App {
 
 	grpcConfig := config.LoadGRPCConfig()
 	kafkaConfig := config.LoadKafkaConfig()
-	AppConfig := config.LoadAppConfig()
+	jaegerConfig := config.LoadJaegerConfig()
 
-	grpcClient := grpc.NewClient(context.TODO(), grpcConfig)
-	calculationGRPCClient := grpc.NewCalculationsClient(grpcClient, 10)
+	tracerShutdown := tracing.NewTracer("api-service", jaegerConfig)
+	tracer := otel.Tracer("api-service")
 
-	kafkaProducer := kafka.NewProducer(kafkaConfig)
+	grpcClient := grpc.NewClient(context.Background(), grpcConfig)
+	calculationGRPCClient := grpc.NewCalculationsClient(grpcClient, grpcConfig.Timeout, tracer)
 
-	repo := repository.NewCalculationsRepository(calculationGRPCClient, kafkaProducer)
+	kafkaProducer := kafka.NewProducer(kafkaConfig, tracer)
 
-	calculationService := calculationService.NewService(repo)
+	repo := repository.NewCalculationsRepository(calculationGRPCClient, kafkaProducer, tracer)
 
-	HTTPHandler := calculationHandler.NewHandler(calculationService)
+	calculationService := calculationService.NewService(repo, tracer)
+
+	HTTPHandler := calculationHandler.NewHandler(calculationService, tracer)
 
 	mux := http.NewServeMux()
 	HTTPHandler.RegisterRoutes(mux)
 
 	return &App{
 		server: &http.Server{
-			Addr:    fmt.Sprintf(":%s", AppConfig.Port),
+			Addr:    ":9999",
 			Handler: mux,
 		},
+		tracerShutdown: tracerShutdown,
 	}
 }
 
 func (a *App) Run() error {
-	slog.Info("Starting server on port 8080")
+	slog.Info("Starting server on port 9999")
 	return a.server.ListenAndServe()
 }
 
@@ -57,5 +63,14 @@ func (a *App) Shutdown() error {
 	defer cancel()
 
 	err := a.server.Shutdown(ctx)
+	if err != nil {
+		log.Printf("Error occured while shutting down server: %v", err)
+	}
+
+	err = a.tracerShutdown(ctx)
+	if err != nil {
+		log.Printf("Error occured while shutting down tracer: %v", err)
+	}
+
 	return err
 }
